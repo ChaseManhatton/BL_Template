@@ -79,6 +79,14 @@
     "SUBNETName": {
       "type": "string",
       "defaultValue": "UTIL"
+    },
+    "BLRegChangePackageUrl": {
+      "type": "string",
+      "defaultValue": "https://github.com/ChaseManhatton/BL_Template/raw/master/Tools/BLServerRegConfig.ps1.zip",
+      "minLength": 10,
+      "metadata": {
+        "description": "Please enter absolute URL to IISConfig package."
+      }
     }
   },
   "variables": {
@@ -116,7 +124,8 @@
           {
             "name": "ipconfig1",
             "properties": {
-              "privateIPAllocationMethod": "Dynamic",
+              "privateIPAllocationMethod": "Static",
+              "privateIPAddress": "172.16.150.10",
               "subnet": {
                 "id": "[concat(variables('bsaVNETID'), '/subnets/', parameters('SUBNETName'))]"
               }
@@ -199,10 +208,35 @@
         "typeHandlerVersion": "1.4",
         "settings": {
           "fileUris": [
-            "https://raw.githubusercontent.com/ChaseManhatton/AXPOC_BL/master/Scripts/InitDataDrive.ps1"
+            "https://raw.githubusercontent.com/ChaseManhatton/BL_Template/master/Scripts/InitDataDrive.ps1"
           ],
           "commandToExecute": "powershell.exe -ExecutionPolicy Unrestricted -file InitDataDrive.ps1"
         }
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "[concat(parameters('bsaAppServerName'),'/BLServerRegConfig')]",
+      "apiVersion": "2015-05-01-preview",
+      "location": "[resourceGroup().location]",
+      "tags": {
+        "displayName": "bsaAppServer/BLServerRegConfig"
+      },
+      "dependsOn": [
+        "[concat('Microsoft.Compute/virtualMachines/', parameters('bsaAppServerName'))]"
+      ],
+      "properties": {
+        "publisher": "Microsoft.Powershell",
+        "type": "DSC",
+        "typeHandlerVersion": "2.8",
+        "settings": {
+          "ModulesUrl": "[parameters('BLRegChangePackageUrl')]",
+          "ConfigurationFunction": "BLServerRegConfig.ps1\\BLAppRegChange",
+          "Properties": {
+            "MachineName": "[parameters('bsaAppServerName')]"
+          }
+        },
+        "protectedSettings": null
       }
     },
     {
@@ -211,7 +245,7 @@
       "name": "[concat(parameters('bsaAppServerName'), '/JoinDomain')]",
       "location": "[resourceGroup().location]",
       "dependsOn": [
-        "[concat('Microsoft.Compute/virtualMachines/', concat(parameters('bsaAppServerName'), '/extensions/DataDriveConfig'))]"
+        "[concat('Microsoft.Compute/virtualMachines/', concat(parameters('bsaAppServerName'), '/extensions/BLServerRegConfig'))]"
       ],
       "tags": {
         "displayName": "bsaAppServer/JoinDomain"
@@ -247,7 +281,8 @@
           {
             "name": "ipconfig1",
             "properties": {
-              "privateIPAllocationMethod": "Dynamic",
+              "privateIPAllocationMethod": "Static",
+              "privateIPAddress": "172.16.150.11",
               "subnet": {
                 "id": "[concat(variables('bsaVNETID'), '/subnets/', parameters('SUBNETName'))]"
               }
@@ -339,7 +374,7 @@
         "typeHandlerVersion": "1.4",
         "settings": {
           "fileUris": [
-            "https://raw.githubusercontent.com/ChaseManhatton/AXPOC_BL/master/Scripts/InitSQLDataDrives.ps1"
+            "https://raw.githubusercontent.com/ChaseManhatton/BL_Template/master/Scripts/InitSQLDataDrives.ps1"
           ],
           "commandToExecute": "powershell.exe -ExecutionPolicy Unrestricted -file InitSQLDataDrives.ps1"
         }
