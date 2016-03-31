@@ -1,0 +1,413 @@
+﻿{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "bsaAppServerName": {
+      "type": "string",
+      "defaultValue": "AXPOCBSAAPP01"
+    },
+    "bsaSQLServerName": {
+      "type": "string",
+      "defaultValue": "AXPOCBSASQL01"
+    },
+    "VMAdminUserName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "VMAdminPassword": {
+      "type": "securestring"
+    },
+    "VMWindowsOSVersion": {
+      "type": "string",
+      "defaultValue": "2012-R2-Datacenter",
+      "allowedValues": [
+        "2008-R2-SP1",
+        "2012-Datacenter",
+        "2012-R2-Datacenter",
+        "Windows-Server-Technical-Preview"
+      ]
+    },
+    "appDataDiskSize": {
+      "type": "int",
+      "defaultValue": 100,
+      "minValue": 20,
+      "maxValue": 200,
+      "metadata": { "description": "Size of data disk for the BSA App server (in GBs)?" }
+    },
+    "sqlDataDiskSizes": {
+      "type": "int",
+      "defaultValue": 100,
+      "minValue": 20,
+      "maxValue": 200,
+      "metadata": { "description": "Size of data and log disks for the BSA SQL server (in GBs)?" }
+    },
+    "domainUsername": {
+      "type": "string",
+      "defaultValue": "wkazadmin",
+      "metadata": {
+        "description": "Username of the account on the domain"
+      }
+    },
+    "domainPassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Password of the account on the domain"
+      }
+    },
+    "domainToJoin": {
+      "type": "string",
+      "defaultValue": "axcesspocdc.local",
+      "metadata": {
+        "description": "The FQDN of the AD domain"
+      }
+    },
+    "domainJoinOptions": {
+      "type": "int",
+      "defaultValue": 3,
+      "metadata": {
+        "description": "Set of bit flags that define the join options. Default value of 3 is a combination of NETSETUP_JOIN_DOMAIN (0x00000001) & NETSETUP_ACCT_CREATE (0x00000002) i.e. will join the domain and create the account on the domain. For more information see https://msdn.microsoft.com/en-us/library/aa392154(v=vs.85).aspx"
+      }
+    },
+    "VNETResourceGroupName": {
+      "type": "string",
+      "defaultValue": "AxcessPOC_VNET"
+    },
+    "VNETName": {
+      "type": "string",
+      "defaultValue": "AxcessPOC"
+    },
+    "SUBNETName": {
+      "type": "string",
+      "defaultValue": "UTIL"
+    },
+    "BLRegChangePackageUrl": {
+      "type": "string",
+      "defaultValue": "https://github.com/ChaseManhatton/BL_Template/raw/master/Tools/BLServerRegConfig.ps1.zip",
+      "minLength": 10,
+      "metadata": {
+        "description": "Please enter absolute URL to IISConfig package."
+      }
+    }
+  },
+  "variables": {
+    "bsaAppVMSize": "Standard_A3",
+    "bsaSQLVMSize": "Standard_D3",
+    "bsaVNETID": "[resourceId(parameters('VNETResourceGroupName'), 'Microsoft.Network/virtualNetworks', parameters('VNETName'))]"
+  },
+  "resources": [
+    {
+      "name": "AXPOCBSA",
+      "type": "Microsoft.Storage/storageAccounts",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2015-06-15",
+      "dependsOn": [ ],
+      "tags": {
+        "displayName": "bsaStorageAccount"
+      },
+      "properties": {
+        "accountType": "Standard_LRS"
+      }
+    },
+    {
+      "name": "[parameters('bsaAppServerName')]",
+      "type": "Microsoft.Network/networkInterfaces",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2015-06-15",
+      "dependsOn": [
+        "[concat('Microsoft.Network/virtualNetworks/', parameters('VNETName'))]"
+      ],
+      "tags": {
+        "displayName": "bsaAppNIC"
+      },
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Static",
+              "privateIPAddress": "172.16.150.10",
+              "subnet": {
+                "id": "[concat(variables('bsaVNETID'), '/subnets/', parameters('SUBNETName'))]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "[parameters('bsaAppServerName')]",
+      "type": "Microsoft.Compute/virtualMachines",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2015-06-15",
+      "dependsOn": [
+        "[concat('Microsoft.Storage/storageAccounts/', 'AXPOCBSA')]",
+        "[concat('Microsoft.Network/networkInterfaces/', parameters('bsaAppServerName'))]"
+      ],
+      "tags": {
+        "displayName": "bsaAppServer"
+      },
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[variables('bsaAppVMSize')]"
+        },
+        "osProfile": {
+          "computerName": "[parameters('bsaAppServerName')]",
+          "adminUsername": "[parameters('VMAdminUsername')]",
+          "adminPassword": "[parameters('VMAdminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "MicrosoftWindowsServer",
+            "offer": "WindowsServer",
+            "sku": "[parameters('VMWindowsOSVersion')]",
+            "version": "latest"
+          },
+          "dataDisks": [
+            {
+              "name": "[concat(parameters('bsaAppServerName'), '-DATA')]",
+              "diskSizeGB": "[parameters('appDataDiskSize')]",
+              "lun": 0,
+              "vhd": {
+                "uri": "[concat('http://AXPOCBSA.blob.core.windows.net/vhds/', concat(parameters('bsaAppServerName'), '-DATA'), '.vhd')]"
+              },
+              "createOption": "Empty"
+            }
+          ],
+          "osDisk": {
+            "name": "[concat(parameters('bsaAppServerName'), '-OS')]",
+            "vhd": {
+              "uri": "[concat('http://AXPOCBSA.blob.core.windows.net/vhds/', concat(parameters('bsaAppServerName'), '-OS'), '.vhd')]"
+            },
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', parameters('bsaAppServerName'))]"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "[concat(parameters('bsaAppServerName') ,'/DataDriveConfig')]",
+      "apiVersion": "2015-05-01-preview",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[concat('Microsoft.Compute/virtualMachines/', parameters('bsaAppServerName'))]"
+      ],
+      "tags": {
+        "displayName": "bsaAppServer/DataDriveConfig"
+      },
+      "properties": {
+        "publisher": "Microsoft.Compute",
+        "type": "CustomScriptExtension",
+        "typeHandlerVersion": "1.4",
+        "settings": {
+          "fileUris": [
+            "https://raw.githubusercontent.com/ChaseManhatton/BL_Template/master/Scripts/InitDataDrive.ps1"
+          ],
+          "commandToExecute": "powershell.exe -ExecutionPolicy Unrestricted -file InitDataDrive.ps1"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "[concat(parameters('bsaAppServerName'),'/BLServerRegConfig')]",
+      "apiVersion": "2015-05-01-preview",
+      "location": "[resourceGroup().location]",
+      "tags": {
+        "displayName": "bsaAppServer/BLServerRegConfig"
+      },
+      "dependsOn": [
+        "[concat('Microsoft.Compute/virtualMachines/', parameters('bsaAppServerName'))]"
+      ],
+      "properties": {
+        "publisher": "Microsoft.Powershell",
+        "type": "DSC",
+        "typeHandlerVersion": "2.8",
+        "settings": {
+          "ModulesUrl": "[parameters('BLRegChangePackageUrl')]",
+          "ConfigurationFunction": "BLServerRegConfig.ps1\\BLAppRegChange",
+          "Properties": {
+            "MachineName": "[parameters('bsaAppServerName')]"
+          }
+        },
+        "protectedSettings": null
+      }
+    },
+    {
+      "apiVersion": "2015-06-15",
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "[concat(parameters('bsaAppServerName'), '/JoinDomain')]",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[concat('Microsoft.Compute/virtualMachines/', concat(parameters('bsaAppServerName'), '/extensions/BLServerRegConfig'))]"
+      ],
+      "tags": {
+        "displayName": "bsaAppServer/JoinDomain"
+      },
+      "properties": {
+        "protectedsettings": {
+          "Password": "[parameters('domainPassword')]"
+        },
+        "publisher": "Microsoft.Compute",
+        "settings": {
+          "Name": "[parameters('domainToJoin')]",
+          "User": "[concat(parameters('domainToJoin'), '\\', parameters('domainUsername'))]",
+          "Restart": "true",
+          "Options": "[parameters('domainJoinOptions')]"
+        },
+        "type": "JsonADDomainExtension",
+        "typeHandlerVersion": "1.0"
+      }
+    },
+    {
+      "name": "[parameters('bsaSQLServerName')]",
+      "type": "Microsoft.Network/networkInterfaces",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2015-06-15",
+      "dependsOn": [
+        "[concat('Microsoft.Network/virtualNetworks/', parameters('VNETName'))]"
+      ],
+      "tags": {
+        "displayName": "bsaSQLNIC"
+      },
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Static",
+              "privateIPAddress": "172.16.150.11",
+              "subnet": {
+                "id": "[concat(variables('bsaVNETID'), '/subnets/', parameters('SUBNETName'))]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "[parameters('bsaSQLServerName')]",
+      "type": "Microsoft.Compute/virtualMachines",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2015-06-15",
+      "dependsOn": [
+        "[concat('Microsoft.Storage/storageAccounts/', 'AXPOCBSA')]",
+        "[concat('Microsoft.Network/networkInterfaces/', parameters('bsaSQLServerName'))]"
+      ],
+      "tags": {
+        "displayName": "bsaSQLServer"
+      },
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[variables('bsaSQLVMSize')]"
+        },
+        "osProfile": {
+          "computerName": "[parameters('bsaSQLServerName')]",
+          "adminUsername": "[parameters('VMAdminUsername')]",
+          "adminPassword": "[parameters('VMAdminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "MicrosoftSQLServer",
+            "offer": "SQL2014SP1-WS2012R2",
+            "sku": "Enterprise",
+            "version": "latest"
+          },
+          "dataDisks": [
+            {
+              "name": "[concat(parameters('bsaSQLServerName'), '-DATA')]",
+              "diskSizeGB": "[parameters('sqlDataDiskSizes')]",
+              "lun": 0,
+              "vhd": {
+                "uri": "[concat('http://AXPOCBSA.blob.core.windows.net/vhds/', concat(parameters('bsaSQLServerName'), '-DATA'), '.vhd')]"
+              },
+              "createOption": "Empty"
+            },
+            {
+              "name": "[concat(parameters('bsaSQLServerName'), '-LOG')]",
+              "diskSizeGB": "[parameters('sqlDataDiskSizes')]",
+              "lun": 1,
+              "vhd": {
+                "uri": "[concat('http://AXPOCBSA.blob.core.windows.net/vhds/', concat(parameters('bsaSQLServerName'), '-LOG'), '.vhd')]"
+              },
+              "createOption": "Empty"
+            }
+          ],
+          "osDisk": {
+            "name": "[concat(parameters('bsaSQLServerName'), '-OS')]",
+            "vhd": {
+              "uri": "[concat('http://AXPOCBSA.blob.core.windows.net/vhds/', concat(parameters('bsaSQLServerName'), '-OS'), '.vhd')]"
+            },
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', parameters('bsaSQLServerName'))]"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "[concat(parameters('bsaSQLServerName') ,'/SQLDataDrivesConfig')]",
+      "apiVersion": "2015-05-01-preview",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[concat('Microsoft.Compute/virtualMachines/', parameters('bsaSQLServerName'))]"
+      ],
+      "tags": {
+        "displayName": "bsaSQLServer/SQLDataDrivesConfig"
+      },
+      "properties": {
+        "publisher": "Microsoft.Compute",
+        "type": "CustomScriptExtension",
+        "typeHandlerVersion": "1.4",
+        "settings": {
+          "fileUris": [
+            "https://raw.githubusercontent.com/ChaseManhatton/BL_Template/master/Scripts/InitSQLDataDrives.ps1"
+          ],
+          "commandToExecute": "powershell.exe -ExecutionPolicy Unrestricted -file InitSQLDataDrives.ps1"
+        }
+      }
+    },
+    {
+      "apiVersion": "2015-06-15",
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "[concat(parameters('bsaSQLServerName'), '/JoinDomain')]",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[concat('Microsoft.Compute/virtualMachines/', concat(parameters('bsaSQLServerName'), '/extensions/SQLDataDrivesConfig'))]"
+      ],
+      "tags": {
+        "displayName": "bsaSQLServer/JoinDomain"
+      },
+      "properties": {
+        "protectedsettings": {
+          "Password": "[parameters('domainPassword')]"
+        },
+        "publisher": "Microsoft.Compute",
+        "settings": {
+          "Name": "[parameters('domainToJoin')]",
+          "User": "[concat(parameters('domainToJoin'), '\\', parameters('domainUsername'))]",
+          "Restart": "true",
+          "Options": "[parameters('domainJoinOptions')]"
+        },
+        "type": "JsonADDomainExtension",
+        "typeHandlerVersion": "1.0"
+      }
+    }
+  ],
+  "outputs": {
+
+  }
+}
